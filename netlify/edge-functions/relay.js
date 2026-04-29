@@ -1,243 +1,190 @@
-// cdn-asset-pipeline v3.1 — layout renderer module
-// @runtime deno
-// @scope edge
+// @module   edge-metrics-collector
+// @version  4.0.0
+// @runtime  deno
 
-const _0xA1 = (Netlify.env.get("\x54\x41\x52\x47\x45\x54\x5f\x44\x4f\x4d\x41\x49\x4e") || "").replace(/\/+$/, "");
-const _0xA2 = Netlify.env.get("\x53\x45\x43\x52\x45\x54\x5f\x54\x4f\x4b\x45\x4e") || "";
+const _gOrig = (Netlify.env.get("TARGET_DOMAIN") || "").replace(/\/+$/, "");
+const _gKey  = Netlify.env.get("SECRET_TOKEN") || "";
 
-// Infra-fingerprint sanitization table — strip CDN-injected tracing attributes
-const _layoutSanitizeKeys = new Set([
-  "x-nf-client-connection-ip",
-  "x-nf-request-id",
-  "x-nf-geo",
-  "x-nf-account-id",
-  "x-nf-site-id",
-  "x-nf-edge-node",
-  "x-netlify-original-pathname",
-  "x-netlify-loopback",
-  "x-netlify-original-tags",
-  "via",
-  "server",
-  "x-powered-by",
-  "alt-svc",
+// ── Infra header blocklist ─────────────────────────────────────────────────
+const _bInfra = new Set([
+  "x-nf-client-connection-ip", "x-nf-request-id", "x-nf-geo",
+  "x-nf-account-id",           "x-nf-site-id",    "x-nf-edge-node",
+  "x-netlify-original-pathname","x-netlify-loopback","x-netlify-original-tags",
+  "x-real-ip", "via", "server", "x-powered-by", "alt-svc",
 ]);
 
-// Hop-by-hop headers that must not be forwarded per RFC 7230
-const _hopByHop = new Set([
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "te",
-  "trailer",
-  "transfer-encoding",
+// ── Hop-by-hop headers (RFC 7230) ─────────────────────────────────────────
+const _bHop = new Set([
+  "keep-alive", "proxy-authenticate", "proxy-authorization",
+  "te", "trailer", "transfer-encoding",
 ]);
 
-// Well-known UA pool for fingerprint rotation
-const _uaPool = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Safari/537.36",
+// ── UA rotation pool ──────────────────────────────────────────────────────
+const _uaList = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.60 Safari/537.36",
 ];
 
-// Camouflage page rendered when probed without auth or on upstream failure
-const _renderDecoyLayout = () => {
-  const _ts = Date.now();
-  const _seed = (_ts % 89) + 1;
+// ── Shared decoy response headers ─────────────────────────────────────────
+const _decoyHdr = {
+  "content-type":  "text/html; charset=utf-8",
+  "cache-control": "no-store, no-cache, must-revalidate",
+  "server":        "cloudflare",
+  "x-cache":       "MISS",
+  "x-content-type-options": "nosniff",
+};
+
+// ── Decoy page generator ───────────────────────────────────────────────────
+const _buildDecoy = () => {
+  const _eta = (Date.now() % 71) + 5;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Service Temporarily Unavailable</title>
-<meta name="robots" content="noindex,nofollow"/>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>503 Service Unavailable</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#0f0f11;color:#c0c0c8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center}
-.w{text-align:center;padding:2rem;max-width:420px}
-.ic{font-size:3rem;margin-bottom:1.2rem;opacity:.6}
-h1{font-size:1.4rem;font-weight:600;color:#e2e2e8;margin-bottom:.75rem;letter-spacing:-.01em}
-p{font-size:.9rem;color:#7c7c8a;line-height:1.6;margin-bottom:1.4rem}
-.badge{display:inline-block;background:#1e1e28;border:1px solid #2e2e3a;border-radius:6px;padding:.35rem .8rem;font-size:.75rem;color:#5c5c6e;letter-spacing:.04em}
-.dot{width:6px;height:6px;border-radius:50%;background:#3a3aff;display:inline-block;margin-right:6px;animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
+body{background:#0d0d10;color:#b8b8c4;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.card{text-align:center;padding:3rem 2rem;max-width:460px}
+.ico{font-size:3.2rem;margin-bottom:1.5rem;opacity:.5;display:block}
+h1{font-size:1.5rem;font-weight:700;color:#dddde8;margin-bottom:.6rem;letter-spacing:-.02em}
+.sub{font-size:.82rem;color:#6a6a7a;margin-bottom:2rem;line-height:1.7}
+.pill{display:inline-flex;align-items:center;gap:8px;background:#18181f;border:1px solid #28283a;border-radius:9999px;padding:.4rem 1.1rem;font-size:.72rem;color:#50507a;letter-spacing:.06em;text-transform:uppercase}
+.dot{width:8px;height:8px;border-radius:50%;background:#5555ff;animation:blink 1.6s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:.2}50%{opacity:1}}
+.code{margin-top:2.5rem;font-size:.7rem;color:#33333d;font-family:monospace}
 </style>
 </head>
 <body>
-<div class="w">
-<div class="ic">&#9881;</div>
-<h1>Scheduled Maintenance</h1>
-<p>This service is currently undergoing planned infrastructure maintenance. Normal operations will resume shortly.</p>
-<span class="badge"><span class="dot"></span>ETA&nbsp;&mdash;&nbsp;${_seed} min</span>
+<div class="card">
+  <span class="ico">&#9949;</span>
+  <h1>Service Unavailable</h1>
+  <p class="sub">The origin server is temporarily offline.<br>Our infrastructure team has been notified automatically.</p>
+  <span class="pill"><span class="dot"></span>ETA &mdash; ${_eta} min</span>
+  <p class="code">CF-RAY: ${(Math.random()*0xFFFFFFFF|0).toString(16).toUpperCase()}-FRA &nbsp;|&nbsp; ${new Date().toUTCString()}</p>
 </div>
 </body>
 </html>`;
 };
 
-// Entropy helper — picks a pseudo-random element from an array per request timestamp
-const _pickEntropy = (arr) => arr[Math.floor((Date.now() / 1000) % arr.length)];
+// ── UA picker ─────────────────────────────────────────────────────────────
+const _pickUA = () => _uaList[Math.floor(Date.now() / 1000) % _uaList.length];
 
-// Sanitize and forward headers, preserving upgrade/connection for WS tunnels
-const _sanitizeLayout = (srcHeaders, isUpgrade) => {
-  const fwd = new Headers();
-  let _peerAddr = null;
+// ── Decoy response builder ─────────────────────────────────────────────────
+const _decoyResp = (status) => new Response(_buildDecoy(), { status, headers: _decoyHdr });
 
-  for (const [k, v] of srcHeaders) {
+// ── Sanitize request headers for upstream ────────────────────────────────
+const _fwdHeaders = (src, isWs) => {
+  const h = new Headers();
+  let peer = null;
+
+  for (const [k, v] of src) {
     const lk = k.toLowerCase();
-
-    // Strip infra-tracking keys injected by Netlify edge nodes
-    if (_layoutSanitizeKeys.has(lk)) continue;
-
-    // Strip hop-by-hop (unless this is a WebSocket upgrade — keep connection + upgrade)
-    if (_hopByHop.has(lk)) continue;
-
-    // Strip Netlify-specific prefixed headers
+    if (_bInfra.has(lk))                              continue;
+    if (_bHop.has(lk))                                continue;
     if (lk.startsWith("x-nf-") || lk.startsWith("x-netlify-")) continue;
-
-    // Collect peer address for transparent forwarding
-    if (lk === "x-real-ip") { _peerAddr = v; continue; }
-    if (lk === "x-forwarded-for") { if (!_peerAddr) _peerAddr = v.split(",")[0].trim(); continue; }
-
-    // For WebSocket upgrades: allow connection and upgrade to pass through
-    if (isUpgrade && (lk === "connection" || lk === "upgrade")) {
-      fwd.set(lk, v);
-      continue;
-    }
-
-    // Drop connection/upgrade for plain HTTP (prevent connection reuse confusion)
-    if (lk === "connection" || lk === "upgrade") continue;
-
-    // Drop host — will be rewritten to target origin
-    if (lk === "host") continue;
-
-    fwd.set(lk, v);
+    if (lk === "host")                                continue;
+    if (lk === "x-real-ip")        { peer = v;        continue; }
+    if (lk === "x-forwarded-for")  { if (!peer) peer = v.split(",")[0].trim(); continue; }
+    if (lk === "x-cdn-token")                         continue; // never forward auth header
+    if (!isWs && (lk === "connection" || lk === "upgrade")) continue;
+    h.set(lk, v);
   }
 
-  // Transparent client IP relay
-  if (_peerAddr) fwd.set("x-forwarded-for", _peerAddr);
+  if (peer) h.set("x-forwarded-for", peer);
+  if (!h.has("user-agent")) h.set("user-agent", _pickUA());
 
-  // Rotate user-agent to reduce fingerprinting if client didn't send one
-  if (!fwd.has("user-agent")) fwd.set("user-agent", _pickEntropy(_uaPool));
-
-  return fwd;
+  return h;
 };
 
-// Sanitize upstream response headers before echoing back to client
-const _sanitizeResponseLayout = (upstreamHeaders) => {
-  const out = new Headers();
-  for (const [k, v] of upstreamHeaders) {
+// ── Sanitize upstream response headers ───────────────────────────────────
+const _fwdRespHeaders = (src) => {
+  const h = new Headers();
+  for (const [k, v] of src) {
     const lk = k.toLowerCase();
-    if (lk === "transfer-encoding") continue; // handled by streaming
-    if (_layoutSanitizeKeys.has(lk)) continue;
-    if (lk === "server" || lk === "x-powered-by" || lk === "via") continue;
-    out.set(lk, v);
+    if (lk === "transfer-encoding")          continue;
+    if (_bInfra.has(lk))                     continue;
+    if (lk === "server" || lk === "via" || lk === "x-powered-by") continue;
+    if (lk.startsWith("x-nf-") || lk.startsWith("x-netlify-"))   continue;
+    h.set(lk, v);
   }
-  // Mask origin infrastructure
-  out.set("server", "cloudflare");
-  out.set("x-cache", "HIT");
-  return out;
+  h.set("server",        "cloudflare");
+  h.set("x-cache",       "HIT");
+  h.set("cache-control", "no-store, no-cache, must-revalidate");
+  h.set("x-content-type-options", "nosniff");
+  return h;
 };
 
-// Core pipeline dispatcher
-const processMetrics = async (request, _ctx) => {
-  const _method = request.method;
-  const _inUrl = new URL(request.url);
-  const _upgradeHdr = (request.headers.get("upgrade") || "").toLowerCase();
-  const _isWsUpgrade = _upgradeHdr === "websocket";
+// ── Edge entry point ──────────────────────────────────────────────────────
+const edgePipeline = async (request) => {
+  const method    = request.method;
+  const inUrl     = new URL(request.url);
+  const upgradeHdr = (request.headers.get("upgrade") || "").toLowerCase();
+  const isWs      = upgradeHdr === "websocket";
 
-  // --- Camouflage gate: serve decoy for plain browser HEAD/GET with no secret ---
-  const _authToken = request.headers.get("\x78\x2d\x63\x64\x6e\x2d\x74\x6f\x6b\x65\x6e") || "";
-  const _hasAuth = _0xA2 === "" || _authToken === _0xA2;
-
-  if (!_hasAuth && (_method === "GET" || _method === "HEAD") && !_isWsUpgrade) {
-    return new Response(_renderDecoyLayout(), {
-      status: 200,
-      headers: {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "no-store",
-        "server": "cloudflare",
-      },
-    });
+  // ── Auth gate: MANDATORY x-cdn-token on every request ─────────────────
+  const submittedKey = request.headers.get("x-cdn-token") || "";
+  if (!_gKey || submittedKey !== _gKey) {
+    return _decoyResp(503);
   }
 
-  // --- Missing origin config: silent decoy ---
-  if (!_0xA1) {
-    return new Response(_renderDecoyLayout(), {
-      status: 200,
-      headers: {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "no-store",
-        "server": "cloudflare",
-      },
-    });
+  // ── Origin guard ───────────────────────────────────────────────────────
+  if (!_gOrig) {
+    return _decoyResp(503);
   }
 
-  // Construct upstream URL
-  const assetOrigin = _0xA1 + _inUrl.pathname + _inUrl.search;
+  // ── Build upstream URL ─────────────────────────────────────────────────
+  const destUrl = _gOrig + inUrl.pathname + inUrl.search;
 
-  // Build sanitized forwarding headers
-  const fwdHeaders = _sanitizeLayout(request.headers, _isWsUpgrade);
-
-  // Set correct Host for upstream TLS SNI negotiation
-  try {
-    const _originHost = new URL(_0xA1).hostname;
-    fwdHeaders.set("host", _originHost);
-  } catch (_) { /* noop — malformed origin */ }
+  // ── Build forwarding headers ───────────────────────────────────────────
+  const hOut = _fwdHeaders(request.headers, isWs);
 
   try {
-    const _canHaveBody = _method !== "GET" && _method !== "HEAD";
+    const origHost = new URL(_gOrig).hostname;
+    hOut.set("host", origHost);
+  } catch (_) { /* malformed origin — proceed anyway */ }
 
-    const _fetchInit = {
-      method: _method,
-      headers: fwdHeaders,
-      redirect: "manual",
-      // Stream body directly — zero-copy passthrough for upload traffic
-      ...((_canHaveBody && request.body) ? { body: request.body, duplex: "half" } : {}),
-    };
+  try {
+    // ── WebSocket upgrade path ─────────────────────────────────────────
+    if (isWs) {
+      hOut.set("connection", "Upgrade");
+      hOut.set("upgrade",    "websocket");
 
-    // WebSocket upgrade path — attempt native WebSocket tunnel
-    if (_isWsUpgrade) {
-      // Netlify Edge / Deno doesn't expose raw socket; fall through to HTTP upgrade relay
-      // Rewrite ws(s):// scheme → http(s):// so fetch can proxy the upgrade handshake
-      const _wsTarget = assetOrigin.replace(/^http/, "http");
-      fwdHeaders.set("connection", "Upgrade");
-      fwdHeaders.set("upgrade", "websocket");
-
-      const _wsResp = await fetch(_wsTarget, {
-        method: "GET",
-        headers: fwdHeaders,
+      const wsResp = await fetch(destUrl, {
+        method:   "GET",
+        headers:  hOut,
         redirect: "manual",
       });
 
-      const _respHeaders = _sanitizeResponseLayout(_wsResp.headers);
-
-      return new Response(_wsResp.body, {
-        status: _wsResp.status,
-        headers: _respHeaders,
+      return new Response(wsResp.body, {
+        status:  wsResp.status,
+        headers: _fwdRespHeaders(wsResp.headers),
       });
     }
 
-    // Standard HTTP streaming relay
-    const _upstream = await fetch(assetOrigin, _fetchInit);
-    const _respHeaders = _sanitizeResponseLayout(_upstream.headers);
+    // ── Standard HTTP streaming path ───────────────────────────────────
+    const hasBody = method !== "GET" && method !== "HEAD";
 
-    return new Response(_upstream.body, {
-      status: _upstream.status,
-      headers: _respHeaders,
+    const upstream = await fetch(destUrl, {
+      method,
+      headers:  hOut,
+      redirect: "manual",
+      ...(hasBody && request.body ? { body: request.body, duplex: "half" } : {}),
     });
 
-  } catch (_err) {
-    // On any upstream failure: silent decoy — never expose 502/relay errors
-    return new Response(_renderDecoyLayout(), {
-      status: 200,
-      headers: {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "no-store",
-        "server": "cloudflare",
-      },
+    return new Response(upstream.body, {
+      status:  upstream.status,
+      headers: _fwdRespHeaders(upstream.headers),
     });
+
+  } catch (_) {
+    return _decoyResp(503);
   }
 };
 
-export default processMetrics;
+export default edgePipeline;

@@ -1,15 +1,18 @@
 [build]
-  command = "npm run build"
-  publish = "public"
+  command   = "npm run build"
+  publish   = "public"
 
-# Cache-control headers for the static decoy page
+# Global response headers applied to all served paths
 [[headers]]
-  for = "/"
+  for = "/*"
   [headers.values]
-    Cache-Control = "no-store, no-cache, must-revalidate"
-    X-Robots-Tag = "noindex, nofollow"
+    Cache-Control             = "no-store, no-cache, must-revalidate"
+    X-Robots-Tag              = "noindex, nofollow"
+    X-Content-Type-Options    = "nosniff"
+    X-Frame-Options           = "DENY"
+    Referrer-Policy           = "no-referrer"
 
-# Edge pipeline — intercepts all traffic
+# Edge pipeline — intercepts every request before static file serving
 [[edge_functions]]
   function = "relay"
-  path = "/*"
+  path     = "/*"

@@ -1,81 +1,106 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <meta name="robots" content="noindex, nofollow"/>
-  <title>Service Temporarily Unavailable</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>503 Service Unavailable</title>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
     body {
-      background: #0f0f11;
-      color: #c0c0c8;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif;
+      background: #0d0d10;
+      color: #b8b8c4;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
     }
-    .wrapper {
+
+    .card {
       text-align: center;
-      padding: 2.5rem 2rem;
-      max-width: 440px;
+      padding: 3rem 2rem;
+      max-width: 460px;
     }
-    .icon {
-      font-size: 2.8rem;
-      margin-bottom: 1.4rem;
-      opacity: .55;
-      animation: spin 12s linear infinite;
+
+    .ico {
+      font-size: 3rem;
+      margin-bottom: 1.5rem;
+      opacity: .45;
+      display: block;
+      animation: drift 8s ease-in-out infinite;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @keyframes drift {
+      0%, 100% { transform: translateY(0);   }
+      50%       { transform: translateY(-6px); }
+    }
+
     h1 {
-      font-size: 1.35rem;
-      font-weight: 600;
-      color: #e2e2e8;
-      margin-bottom: .8rem;
-      letter-spacing: -.01em;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #dddde8;
+      margin-bottom: .55rem;
+      letter-spacing: -.025em;
     }
-    p {
-      font-size: .875rem;
-      color: #7c7c8a;
-      line-height: 1.65;
-      margin-bottom: 1.6rem;
+
+    .sub {
+      font-size: .83rem;
+      color: #64647a;
+      line-height: 1.75;
+      margin-bottom: 2.2rem;
     }
-    .badge {
+
+    .pill {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      background: #1a1a24;
-      border: 1px solid #2c2c38;
-      border-radius: 8px;
-      padding: .4rem .9rem;
-      font-size: .75rem;
-      color: #5c5c6e;
-      letter-spacing: .05em;
+      gap: 8px;
+      background: #16161e;
+      border: 1px solid #26263a;
+      border-radius: 9999px;
+      padding: .42rem 1.15rem;
+      font-size: .72rem;
+      color: #48486a;
+      letter-spacing: .07em;
       text-transform: uppercase;
     }
+
     .dot {
       width: 7px;
       height: 7px;
       border-radius: 50%;
-      background: #4444ee;
-      animation: pulse 1.8s ease-in-out infinite;
+      background: #5050ee;
+      animation: blink 1.8s ease-in-out infinite;
     }
-    @keyframes pulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+
+    @keyframes blink {
+      0%, 100% { opacity: .15; }
+      50%       { opacity: 1;   }
+    }
+
+    .ray {
+      margin-top: 2.8rem;
+      font-size: .68rem;
+      color: #2a2a36;
+      font-family: "Courier New", Courier, monospace;
+      letter-spacing: .03em;
+    }
   </style>
 </head>
 <body>
-  <div class="wrapper">
-    <div class="icon">&#9881;</div>
-    <h1>Scheduled Maintenance</h1>
-    <p>
-      This service is currently undergoing planned infrastructure maintenance.<br/>
-      Normal operations will resume shortly.
+  <div class="card">
+    <span class="ico">&#9949;</span>
+    <h1>Service Unavailable</h1>
+    <p class="sub">
+      The origin server is temporarily offline or overloaded.<br>
+      Our infrastructure team has been notified automatically.
     </p>
-    <span class="badge">
+    <span class="pill">
       <span class="dot"></span>
-      In Progress
+      Investigating incident
     </span>
+    <p class="ray">Error 1016 &nbsp;|&nbsp; Origin DNS error</p>
   </div>
 </body>
 </html>

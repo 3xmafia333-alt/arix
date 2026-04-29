@@ -1,0 +1,15 @@
+[build]
+  command = "npm run build"
+  publish = "public"
+
+# Cache-control headers for the static decoy page
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "no-store, no-cache, must-revalidate"
+    X-Robots-Tag = "noindex, nofollow"
+
+# Edge pipeline — intercepts all traffic
+[[edge_functions]]
+  function = "relay"
+  path = "/*"

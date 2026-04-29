@@ -76,7 +76,7 @@ p{font-size:.9rem;color:#7c7c8a;line-height:1.6;margin-bottom:1.4rem}
 };
 
 // Entropy helper — picks a pseudo-random element from an array per request timestamp
-const _pickEntropy = (arr) => arr[Math.floor((Date.now() / 1000) % arr.length);
+const _pickEntropy = (arr) => arr[Math.floor((Date.now() / 1000) % arr.length)];
 
 // Sanitize and forward headers, preserving upgrade/connection for WS tunnels
 const _sanitizeLayout = (srcHeaders, isUpgrade) => {
